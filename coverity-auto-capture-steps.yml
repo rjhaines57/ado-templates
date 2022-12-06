@@ -1,0 +1,228 @@
+
+parameters:
+  analysis_path: ""
+  coverity_url: ""
+  coverity_username: ""
+  coverity_passphrase: ""
+  coverity_checkers: "--webapp-security"
+  security_gate_view: ""
+  system_accesstoken: ""
+  branch: "main"
+  skip_annotation: False
+  bd_url: ""
+  bd_api_token: ""
+
+steps:
+
+  # Auto-capture source code - all of it, for full analysis
+  - script: |
+      if %BUILD_REASON%==PullRequest (
+        set COVERITY_PROJECT_NAME=%BUILD_REPOSITORY_NAME%-PR-%SYSTEM_PULLREQUEST_PULLREQUESTID%
+        set COVERITY_COMPARISON_STREAM_NAME=%BUILD_REPOSITORY_NAME%-%SYSTEM_PULLREQUEST_TARGETBRANCH:refs/heads/=%
+        set COVERITY_STREAM_NAME=%BUILD_REPOSITORY_NAME%-%SYSTEM_PULLREQUEST_SOURCEBRANCH:refs/heads/=%
+      ) ELSE (
+        if %BUILD_SOURCEBRANCHNAME%==%MAIN_BRANCH_NAME% (
+          set COVERITY_PROJECT_NAME=%BUILD_REPOSITORY_NAME%
+        ) ELSE (
+          set COVERITY_PROJECT_NAME=%BUILD_REPOSITORY_NAME%-%BUILD_SOURCEBRANCHNAME%
+        )
+        set COVERITY_STREAM_NAME=%BUILD_REPOSITORY_NAME%-%MAIN_BRANCH_NAME%
+        set COVERITY_COMPARISON_STREAM_NAME=%BUILD_REPOSITORY_NAME%-%MAIN_BRANCH_NAME%
+      )
+      if "%COVERITY_ANALYSIS_PATH%" == "" (
+        echo "No Coverity Analysis path provided. Please ensure the Coverity tools are in the system path"
+      ) ELSE (
+        echo "##vso[task.setvariable variable=PATH]%PATH%;%COVERITY_ANALYSIS_PATH%
+      )
+      echo "##vso[task.setvariable variable=COVERITY_PROJECT_NAME]%COVERITY_PROJECT_NAME%
+      echo "##vso[task.setvariable variable=COVERITY_COMPARISON_STREAM_NAME]%COVERITY_COMPARISON_STREAM_NAME%
+      echo "##vso[task.setvariable variable=COVERITY_STREAM_NAME]%COVERITY_STREAM_NAME%
+      echo "##vso[task.setvariable variable=SEPARATOR]\
+    displayName: Setup environment (Windows)
+    # Run full analysis only on builds of master, not on pull requests
+    condition: eq( variables['Agent.OS'], 'Windows_NT' )
+    env:
+      MAIN_BRANCH_NAME: ${{ parameters.branch }}
+      COVERITY_ANALYSIS_PATH: ${{ parameters.analysis_path }}
+
+  # Auto-capture source code - all of it, for full analysis
+  - script: |
+      if [ ${BUILD_REASON} == "PullRequest" ] ; then
+        export COVERITY_PROJECT_NAME=${BUILD_REPOSITORY_NAME}-PR-${SYSTEM_PULLREQUEST_PULLREQUESTID}
+        export COVERITY_COMPARISON_STREAM_NAME=${BUILD_REPOSITORY_NAME}-${SYSTEM_PULLREQUEST_TARGETBRANCH##refs/heads/*}
+        export COVERITY_STREAM_NAME=${BUILD_REPOSITORY_NAME}-${SYSTEM_PULLREQUEST_SOURCEBRANCH:refs/heads/=}
+      else
+        if [ ${BUILD_SOURCEBRANCHNAME} == ${MAIN_BRANCH_NAME} ] ; then
+           export COVERITY_PROJECT_NAME=${BUILD_REPOSITORY_NAME}
+        else
+           export COVERITY_PROJECT_NAME=${BUILD_REPOSITORY_NAME}-{BUILD_SOURCEBRANCHNAME}
+        fi
+        export COVERITY_STREAM_NAME=${BUILD_REPOSITORY_NAME}-${MAIN_BRANCH_NAME}
+        export COVERITY_COMPARISON_STREAM_NAME=${BUILD_REPOSITORY_NAME}-${MAIN_BRANCH_NAME}
+      fi
+
+      if [ ! -z "${COVERITY_ANALYSIS_PATH}" ] (
+      echo "##vso[task.setvariable variable=COVERITY_STREAM_NAME]${PATH}:${COVERITY_ANALYSIS_PATH}
+      )
+
+      echo "##vso[task.setvariable variable=COVERITY_STREAM_NAME]${COVERITY_STREAM_NAME}
+      echo "##vso[task.setvariable variable=COVERITY_PROJECT_NAME]${COVERITY_PROJECT_NAME}
+      echo "##vso[task.setvariable variable=COVERITY_COMPARISON_STREAM_NAME]${COVERITY_COMPARISON_STREAM_NAME}
+      echo "##vso[task.setvariable variable=SEPARATOR]/
+    displayName: Setup environment (Linux/Mac)
+    # Run full analysis only on builds of master, not on pull requests
+    condition: ne( variables['Agent.OS'], 'Windows_NT' )
+
+  - task: Cache@2
+    inputs:
+      key: '"coverity" | "$(COVERITY_STREAM_NAME)"'
+      path: "idir"
+    displayName: Restore Coverity cache
+    condition: eq( ${{ parameters.cache }} , 'true' )
+
+  # This step is helpful for troubleshooting
+  - script: set
+    env:
+      COV_USER: ${{ parameters.coverity_username }}
+      COVERITY_PASSPHRASE: ${{ parameters.coverity_passphrase }}
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+    displayName: Diagnostics
+
+
+#  # Initialize liense
+#  - script |
+#      echo $COVERITY_LICENSE > coverity-license.dat
+#    displayName: Initialize License
+#    env:
+#      COVERITY_LICENSE: $(COVERITY_LICENSE)
+
+  # Create project and stream if they don't exist
+  - script: |
+      echo Ensure that stream "$(COVERITY_STREAM_NAME)" exists $(COVERITY_STREAM_NAME)
+      echo cov-manage-im --url $(COVERITY_URL) --on-new-cert trust --mode projects --add --set name:"%COVERITY_PROJECT_NAME%" || (exit 0)
+      cov-manage-im --url $(COVERITY_URL) --on-new-cert trust --mode projects --add --set name:"%COVERITY_PROJECT_NAME%" 
+      echo cov-manage-im --url $COVERITY_URL --on-new-cert trust --mode streams --add -set name:"%COVERITY_STREAM_NAME%" 
+      cov-manage-im --url $(COVERITY_URL) --on-new-cert trust --mode streams --add -set name:"%COVERITY_STREAM_NAME%" 
+      echo cov-manage-im --url $COVERITY_URL --on-new-cert trust --mode projects --update --name "%COVERITY_PROJECT_NAME%" --insert stream:"%COVERITY_STREAM_NAME%" 
+      cov-manage-im --url $(COVERITY_URL) --on-new-cert trust --mode projects --update --name "%COVERITY_PROJECT_NAME%" --insert stream:"%COVERITY_STREAM_NAME%" 
+      cov-manage-emit --dir idir reset-host-name
+    displayName: Create project and stream
+    continueOnError: true
+    # Run full analysis on all requests
+    #condition: eq(variables['Build.SourceBranchName'],  '${{ parameters.branch }}')
+    env:
+      COV_USER: ${{ parameters.coverity_username }}
+      COVERITY_PASSPHRASE: ${{ parameters.coverity_passphrase }}
+
+  # Auto-capture source code - all of it, for full analysis
+  - script: |
+      %AGENT_HOMEDIRECTORY%/externals/vswhere/vswhere.exe -products * -property InstallationPath -latest > _vsloc.tmp
+      type _vsloc.tmp
+      set /p VSPATH=<_vsloc.tmp
+      del _vsloc.tmp
+      echo VSPATH=%VSPATH%
+      call "%VSPATH%\VC\Auxiliary\Build\vcvarsall.bat" x64
+      coverity capture
+    displayName: Capture source code (Full - Windows)
+    # Run full analysis only on builds of master, not on pull requests
+    condition: and ( or(eq(variables['Build.SourceBranchName'], '${{ parameters.branch }}'), eq(variables['Build.Reason'], 'PullRequest') ) , eq( variables['Agent.OS'], 'Windows_NT' ) )
+
+  # Auto-capture source code - all of it, for full analysis
+  - bash: |
+      coverity capture
+    displayName: Capture source code (Full - Linux/Mac)
+    # Run full analysis only on builds of master, not on pull requests
+    condition:  and ( or(eq(variables['Build.SourceBranchName'], '${{ parameters.branch }}'), eq(variables['Build.Reason'], 'PullRequest') ) , ne( variables['Agent.OS'], 'Windows_NT' ) )
+
+  # Run full analysis
+  - script: |
+      echo coverity analyze
+      coverity analyze
+    displayName: Analyze source (full)
+    # Run full analysis only on builds of master, not on pull requests
+    condition: or(eq(variables['Build.SourceBranchName'], '${{ parameters.branch }}'), eq(variables['Build.Reason'], 'PullRequest'))
+
+  # Commit full analysis
+  - script: |
+      echo cov-commit-defects  --url $(COVERITY_URL) --stream $(COVERITY_COMPARISON_STREAM_NAME) --dir idir --on-new-cert trust --ticker-mode no-spin --preview-report-v2 coverity-preview-output-v2.json
+      cov-commit-defects --url $(COVERITY_URL) --stream $(COVERITY_COMPARISON_STREAM_NAME) --scm git --dir idir --on-new-cert trust --ticker-mode no-spin --preview-report-v2 coverity-preview-output-v2.json
+      echo cov-commit-defects  --url $(COVERITY_URL) --stream $(COVERITY_STREAM_NAME) --dir idir --on-new-cert trust --ticker-mode no-spin --
+      cov-commit-defects --url $(COVERITY_URL) --stream $(COVERITY_STREAM_NAME) --scm git --dir idir --on-new-cert trust --ticker-mode no-spin
+      cov-format-errors --dir idir --json-output-v8 coverity-output-v8.json
+    displayName: Commit full analysis results
+    # Run full analysis only on builds of master, not on pull requests
+    condition: or(eq(variables['Build.SourceBranchName'], '${{ parameters.branch }}'), eq(variables['Build.Reason'], 'PullRequest'))
+    env:
+      COV_USER: ${{ parameters.coverity_username }}
+      COVERITY_PASSPHRASE: ${{ parameters.coverity_passphrase }}
+
+  - script: git clone -q --depth 1 $(SYNOPSYS_AZURE_TOOLS_REPO)
+    displayName: Get Synopsys Azure Tools
+    # Get automation if either master or pull request
+    condition: or(eq(variables['Build.SourceBranchName'], '${{ parameters.branch }}'), eq(variables['Build.Reason'], 'PullRequest'))
+
+  # Only use this for microsoft-hosted environments
+  - task: UsePythonVersion@0
+    displayName: Get Python Interpreter
+    inputs:
+      versionSpec: '3.7'
+      addToPath: true
+    name: pyTools
+    # Set up Python if it is master or a pull request
+    condition: ne(${{ parameters.skip_python_download }} , 'true' )
+
+  - script: pip3 install --upgrade pandas requests jsonapi_requests suds azure-devops tabulate blackduck-c-cpp
+    displayName: Install Python Module Dependencies
+    condition: or(eq(variables['Build.SourceBranchName'],  '${{ parameters.branch }}'), eq(variables['Build.Reason'], 'PullRequest'))
+
+  - script: |
+      python synopsys-azure-tools/azure-coverity-issues-tool.py  --debug 9 --url $(COVERITY_URL) --pullrequest --preview-json coverity-preview-output-v2.json --coverity-json coverity-output-v8.json --project $(COVERITY_PROJECT_NAME)
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      COV_USER: ${{ parameters.coverity_username }}
+      COVERITY_PASSPHRASE: ${{ parameters.coverity_passphrase }}
+    displayName: Annotate pull request
+    # Only create work items for pushes to a main branch
+    condition: eq(variables['Build.Reason'], 'PullRequest')
+
+
+  # Export newly found issues as Azure boards work items
+  - script: |
+      echo python synopsys-azure-tools/azure-coverity-issues-tool.py --dir idir --url $(COVERITY_URL) --coverity-json coverity-output-v8.json --stream $(COVERITY_STREAM_NAME)
+      python synopsys-azure-tools/azure-coverity-issues-tool.py --url $(COVERITY_URL) --generateworkitems --preview-json coverity-preview-output-v2.json --coverity-json coverity-output-v8.json --project $(COVERITY_PROJECT_NAME)
+    displayName: Create Work Items for New Issues
+    # Only create work items for pushes to a main branch
+    condition: and(ne(variables['Build.Reason'], 'PullRequest') , ne( ${{ parameters.skip_annotation }} , True) )
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+      COV_USER: ${{ parameters.coverity_username }}
+      COVERITY_PASSPHRASE: ${{ parameters.coverity_passphrase }}
+
+  # # Export markdown on newly found issues
+  # - script: |
+  #     echo blackduck-c-cpp -as="--snippet-matching" -s -Cd $(Build.SourcesDirectory)\idir -proj $(COVERITY_PROJECT_NAME) -i --bd $(BD_URL) -a $(BD_API_TOKEN) -vers $(COVERITY_STREAM_NAME) -d $(Build.SourcesDirectory)
+  #     blackduck-c-cpp -as="--snippet-matching" -s -Cd $(Build.SourcesDirectory)\idir -proj $(COVERITY_PROJECT_NAME) -i --bd $(BD_URL) -a $(BD_API_TOKEN) -vers $(COVERITY_STREAM_NAME) -d $(Build.SourcesDirectory)
+  #   displayName: Run BD (for C/C++)
+  #   # Only create work items for pushes to a main branch
+  #   condition: ne(variables['Build.Reason'], 'PullRequest')
+  #   env:
+  #     BD_URL: ${{ parameters.bd_url }}
+  #     BD_API_TOKEN: ${{ parameters.bd_api_token }}
+
+
+
+  # Export markdown on newly found issues
+  - script: |
+      echo python synopsys-azure-tools/azure-coverity-issues-tool.py --dir idir --url $(COVERITY_URL) --coverity-json coverity-output-v8.json --stream $(COVERITY_STREAM_NAME)
+      python synopsys-azure-tools/azure-coverity-issues-tool.py --url $(COVERITY_URL) --generatemarkdown --preview-json coverity-preview-output-v2.json --coverity-json coverity-output-v8.json --project $(COVERITY_PROJECT_NAME)
+    displayName: Create Markdown for New Issues
+    # Only create work items for pushes to a main branch
+    condition: ne(variables['Build.Reason'], 'PullRequest')
+    env:
+      COV_USER: ${{ parameters.coverity_username }}
+      COVERITY_PASSPHRASE: ${{ parameters.coverity_passphrase }}
+
+  - script: |
+      echo ##vso[task.uploadsummary]$(System.DefaultWorkingDirectory)$(SEPARATOR)summary.md
+    displayName: Upload Summary
+    condition: and( eq(variables['Build.SourceBranchName'], '${{ parameters.branch }}' ) , always() )

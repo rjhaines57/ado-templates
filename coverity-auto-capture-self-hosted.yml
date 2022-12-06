@@ -1,0 +1,35 @@
+parameters:
+  analysis_path: ""
+  coverity_url: ""
+  coverity_username: ""
+  coverity_passphrase: ""
+  coverity_checkers: "--webapp-security"
+  security_gate_view: ""
+  system_accesstoken: ""
+  branch: "main"
+  bd_url: ""
+  bd_api_token: ""
+  cache: true
+  skip_python_download: false
+
+jobs:
+  - job: Coverity_Blackduck
+
+    variables:
+      SYSTEM_ACCESSTOKEN_PARAM: ${{ parameters.system_accesstoken }}
+      COVERITY_CONFIG: ./coverity-data/coverity_config.xml
+      SYNOPSYS_AZURE_TOOLS_REPO: https://robhaines.visualstudio.com/synopsys-azure-tools/_git/synopsys-azure-tools
+
+    steps:
+      - template: 'coverity-auto-capture-steps.yml@synopsys-azure-templates'
+        parameters:
+          analysis_path : ${{ parameters.analysis_path}}
+          coverity_url : ${{ parameters.coverity_url }}
+          coverity_username: ${{ parameters.coverity_username }}
+          coverity_passphrase: ${{ parameters.coverity_passphrase }}
+          coverity_checkers: ${{ parameters.coverity_checkers }}
+          security_gate_view: ${{ parameters.security_gate_view }}
+          system_accesstoken: ${{ parameters.system_accesstoken }}
+          branch: ${{ parameters.branch }}
+          cache: ${{ parameters.cache }}
+          skip_python_download:  ${{ parameters.skip_python_download }}
