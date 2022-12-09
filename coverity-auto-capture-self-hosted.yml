@@ -21,7 +21,7 @@ jobs:
       SYNOPSYS_AZURE_TOOLS_REPO: https://github.com/rjhaines57/ado-tools.git
 
     steps:
-      - template: 'coverity-auto-capture-steps.yml@synopsys-azure-templates'
+      - template: 'coverity-auto-capture-steps.yml@azure-templates'
         parameters:
           analysis_path : ${{ parameters.analysis_path}}
           coverity_url : ${{ parameters.coverity_url }}
