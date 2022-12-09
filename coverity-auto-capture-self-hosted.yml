@@ -13,12 +13,12 @@ parameters:
   skip_python_download: false
 
 jobs:
-  - job: Coverity_Blackduck
+  - job: Coverity
 
     variables:
       SYSTEM_ACCESSTOKEN_PARAM: ${{ parameters.system_accesstoken }}
       COVERITY_CONFIG: ./coverity-data/coverity_config.xml
-      SYNOPSYS_AZURE_TOOLS_REPO: https://robhaines.visualstudio.com/synopsys-azure-tools/_git/synopsys-azure-tools
+      SYNOPSYS_AZURE_TOOLS_REPO: https://github.com/rjhaines57/ado-tools.git
 
     steps:
       - template: 'coverity-auto-capture-steps.yml@synopsys-azure-templates'
